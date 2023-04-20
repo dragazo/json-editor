@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body {
+    text-align: center;
+}
+.editor {
+    display: inline-block;
+    background-color: #5a89e0;
+    padding: 5px;
+    border-radius: 20px;
+}
+.entry {
+    padding: 5px;
+    margin: 5px;
+    background-color: #aebbd3;
+    border-radius: 20px;
+}
+.field {
+    display: inline-block;
+    padding: 5px;
+}
+.button {
+    display: inline-block;
+    padding: 5px;
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+    border-radius: 20px;
+}
+</style>
+<script>
+function createButton(text, action) {
+    const res = document.createElement('div');
+    res.innerText = text;
+    res.classList.add('button');
+    res.onclick = action;
+    return res;
+}
+function createField(name, input) {
+    const res = document.createElement('div');
+    res.setAttribute('name', name);
+    res.classList.add('field');
+    res.innerHTML = `${name}: `;
+    res.appendChild(input);
+    return res;
+}
+function createEntry(editor, schema) {
+    const res = document.createElement('div');
+    res.classList.add('entry');
+    for (const field in schema) {
+        const type = schema[field];
+        let input = null;
+        if (typeof(type) === 'object') {
+            input = createEditor(type);
+        } else {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.size = 6;
+        }
+        res.appendChild(createField(field, input));
+    }
+    const delButton = createButton('--');
+    delButton.onclick = () => {
+        if (confirm('Are you sure you would like to delete this entry? This operation cannot be undone.')) {
+            editor.removeChild(res);
+        }
+    };
+    delButton.style.backgroundColor = '#d11b0d';
+    res.appendChild(delButton);
+    return res;
+}
+function createEditor(schema) {
+    const res = document.createElement('div');
+    res.classList.add('editor');
+    const addButton = createButton('+');
+    addButton.onclick = () => {
+        res.insertBefore(createEntry(res, schema), addButton);
+    };
+    addButton.style.backgroundColor = '#aebbd3';
+    res.appendChild(addButton);
+    return res;
+}
+function clearPeripherals() {
+    const peripherals = document.getElementById('peripherals');
+    peripherals.innerHTML = '';
+
+    const heading = text => {
+        const res = document.createElement('h3');
+        res.innerText = text;
+        peripherals.appendChild(res);
+    };
+    const newLine = () => {
+        for (let i = 0; i < 2; ++i) {
+            peripherals.appendChild(document.createElement('br'));
+        }
+    };
+
+    const schemas = {
+        motors: { name: 'string', gpioPos: 'number', gpioNeg: 'number' },
+        motorGroups: { name: 'string', motors: { name: 'string' } },
+    };
+    for (const name in schemas) {
+        heading(name);
+        peripherals.appendChild(createEditor(schemas[name]));
+        newLine();
+    }
+}
+window.onload = () => {
+    clearPeripherals();
+    const peripherals = {
+        motors: [
+            { name: 'LeftWheel', gpio_pos: 4, gpio_neg: 5 },
+            { name: 'RightWheel', gpio_pos: 6, gpio_neg: 7 },
+        ],
+        hcsr04s: [
+            { name: 'Forward', gpio_trigger: 14, gpio_echo: 15 },
+        ],
+    };
+};
+</script>
+</head>
+<body>
+<div id='peripherals'></div>
+</body>
+</html>
