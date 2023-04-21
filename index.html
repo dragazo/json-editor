@@ -5,10 +5,14 @@
 body {
     text-align: center;
 }
-.editor {
+.scalar {
+    margin: 5px;
+}
+.object {
     display: inline-block;
-    background-color: #5a89e0;
+    margin: 5px;
     padding: 5px;
+    background-color: #5a89e0;
     border-radius: 20px;
 }
 .entry {
@@ -17,10 +21,6 @@ body {
     background-color: #aebbd3;
     border-radius: 20px;
 }
-.field {
-    display: inline-block;
-    padding: 5px;
-}
 .button {
     display: inline-block;
     padding: 5px;
@@ -28,100 +28,220 @@ body {
     width: 20px;
     height: 20px;
     border-radius: 20px;
+    user-select: none;
 }
 </style>
 <script>
-function createButton(text, action) {
-    const res = document.createElement('div');
-    res.innerText = text;
-    res.classList.add('button');
-    res.onclick = action;
-    return res;
+const Schema = {
+    String: () => ['string', null],
+    Number: () => ['number', null],
+    Bool: () => ['bool', null],
+    Option: t => ['option', t],
+    Array: type => ['array', type],
+    Tuple: (...types) => ['tuple', types],
+    Object: fields => ['object', fields],
+};
+
+function isSchema(schema) {
+    if (!Array.isArray(schema) || schema.length !== 2) return false;
+    const [meta, t] = schema;
+    if (meta === 'string') return true;
+    if (meta === 'number') return true;
+    if (meta === 'bool') return true;
+    if (meta === 'option') return isSchema(t);
+    if (meta === 'array') return isSchema(t);
+    if (meta === 'tuple') return t.every(x => isSchema(x));
+    if (meta === 'object') return Object.keys(t).every(k => typeof(k) === 'string' && isSchema(t[k]));
+    return false;
 }
-function createField(name, input) {
-    const res = document.createElement('div');
-    res.setAttribute('name', name);
-    res.classList.add('field');
-    res.innerHTML = `${name}: `;
-    res.appendChild(input);
-    return res;
-}
-function createEntry(editor, schema) {
-    const res = document.createElement('div');
-    res.classList.add('entry');
-    for (const field in schema) {
-        const type = schema[field];
-        let input = null;
-        if (typeof(type) === 'object') {
-            input = createEditor(type);
-        } else {
-            input = document.createElement('input');
-            input.type = 'text';
-            input.size = 6;
-        }
-        res.appendChild(createField(field, input));
-    }
-    const delButton = createButton('--');
-    delButton.onclick = () => {
-        if (confirm('Are you sure you would like to delete this entry? This operation cannot be undone.')) {
-            editor.removeChild(res);
-        }
-    };
-    delButton.style.backgroundColor = '#d11b0d';
-    res.appendChild(delButton);
-    return res;
-}
+
 function createEditor(schema) {
-    const res = document.createElement('div');
-    res.classList.add('editor');
-    const addButton = createButton('+');
-    addButton.onclick = () => {
-        res.insertBefore(createEntry(res, schema), addButton);
-    };
-    addButton.style.backgroundColor = '#aebbd3';
-    res.appendChild(addButton);
-    return res;
+    if (!isSchema(schema)) throw Error('not schema');
+    const [meta, t] = schema;
+
+    function createButton(text) {
+        const res = document.createElement('div');
+        res.innerText = text;
+        res.classList.add('button');
+        return res;
+    }
+    function createRoot(elem) {
+        const res = document.createElement(elem);
+        res.setAttribute('meta', meta);
+        return res;
+    }
+
+    if (meta === 'string' || meta === 'number') {
+        const res = createRoot('input');
+        res.classList.add('scalar');
+        res.type = 'text';
+        res.size = 10;
+        return res;
+    }
+
+    if (meta === 'bool') {
+        const res = createRoot('input');
+        res.classList.add('scalar');
+        res.type = 'checkbox';
+        return res;
+    }
+
+    if (meta === 'option' || meta === 'array') {
+        const res = createRoot('div');
+        res.classList.add('object');
+        const addButton = createButton('+');
+        addButton.style.backgroundColor = '#aebbd3';
+        addButton.onclick = () => {
+            if (meta === 'option' && res.children.length > 1) return;
+            const entry = document.createElement('div');
+            entry.classList.add('entry');
+            entry.appendChild(createEditor(t));
+            const delButton = createButton('--');
+            delButton.style.backgroundColor = '#d11b0d';
+            delButton.onclick = () => {
+                if (confirm('Are you sure you would like to delete this entry? This operation cannot be undone.')) {
+                    res.removeChild(entry);
+                }
+            };
+            entry.appendChild(delButton);
+            res.insertBefore(entry, addButton);
+        };
+        res.appendChild(addButton);
+        return res;
+    }
+
+    if (meta === 'tuple') {
+        const res = createRoot('div');
+        res.classList.add('object');
+        let counter = 0;
+        for (const ty of t) {
+            const entry = document.createElement('div');
+            entry.classList.add('entry');
+            entry.innerText = `Item ${++counter}: `;
+            entry.appendChild(createEditor(ty));
+            res.appendChild(entry);
+        }
+        return res;
+    }
+
+    if (meta === 'object') {
+        const res = createRoot('div');
+        res.classList.add('object');
+        for (const k in t) {
+            const entry = document.createElement('div');
+            entry.setAttribute('key', k);
+            entry.classList.add('entry');
+            entry.innerText = `${k}: `;
+            entry.appendChild(createEditor(t[k]));
+            res.appendChild(entry);
+        }
+        return res;
+    }
+
+    throw Error('UNREACHABLE!');
 }
+
+function parseEditor(editor) {
+    const meta = editor.getAttribute('meta');
+    if (!meta) throw Error('not schema editor');
+
+    if (meta === 'string') {
+        return editor.value;
+    }
+
+    if (meta === 'number') {
+        const raw = parseFloat(editor.value);
+        if (Number.isNaN(raw)) throw Error(`failed to parse ${editor.value} as a number`);
+        return raw;
+    }
+
+    if (meta === 'bool') {
+        return editor.checked;
+    }
+
+    if (meta === 'option') {
+        return editor.children.length > 1 ? parseEditor(editor.children[0].children[0]) : null;
+    }
+
+    if (meta === 'array') {
+        const res = [];
+        for (let i = 0; i < editor.children.length - 1; ++i) {
+            res.push(parseEditor(editor.children[i].children[0]));
+        }
+        return res;
+    }
+
+    if (meta === 'tuple') {
+        const res = [];
+        for (const child of editor.children) {
+            res.push(parseEditor(child.children[0]));
+        }
+        return res;
+    }
+
+    if (meta === 'object') {
+        const res = {};
+        for (const child of editor.children) {
+            res[child.getAttribute('key')] = parseEditor(child.children[0]);
+        }
+        return res;
+    }
+
+    throw Error('UNREACHABLE!');
+}
+
+// ------------------------------------
+
 function clearPeripherals() {
     const peripherals = document.getElementById('peripherals');
-    peripherals.innerHTML = '';
-
-    const heading = text => {
-        const res = document.createElement('h3');
-        res.innerText = text;
-        peripherals.appendChild(res);
-    };
-    const newLine = () => {
-        for (let i = 0; i < 2; ++i) {
-            peripherals.appendChild(document.createElement('br'));
-        }
-    };
-
-    const schemas = {
-        motors: { name: 'string', gpioPos: 'number', gpioNeg: 'number' },
-        motorGroups: { name: 'string', motors: { name: 'string' } },
-    };
-    for (const name in schemas) {
-        heading(name);
-        peripherals.appendChild(createEditor(schemas[name]));
-        newLine();
-    }
+    const editor = createEditor(Schema.Object({
+        i2c: Schema.Option(Schema.Object({
+            gpio_sda: Schema.Number(),
+            gpio_scl: Schema.Number(),
+        })),
+        digital_ins: Schema.Array(Schema.Object({
+            name: Schema.String(),
+            gpio: Schema.Number(),
+            negated: Schema.Bool(),
+        })),
+        digital_outs: Schema.Array(Schema.Object({
+            name: Schema.String(),
+            gpio: Schema.Number(),
+            negated: Schema.Bool(),
+        })),
+        motors: Schema.Array(Schema.Object({
+            name: Schema.String(),
+            gpio_pos: Schema.Number(),
+            gpio_neg: Schema.Number(),
+        })),
+        motor_groups: Schema.Array(Schema.Object({
+            name: Schema.String(),
+            motors: Schema.Array(Schema.String()),
+        })),
+        hcsr04s: Schema.Array(Schema.Object({
+            name: Schema.String(),
+            gpio_trigger: Schema.Number(),
+            gpio_echo: Schema.Number(),
+        })),
+        max30205s: Schema.Array(Schema.Object({
+            name: Schema.String(),
+            i2c_addr: Schema.Number(),
+        })),
+    }));
+    peripherals.appendChild(editor);
+}
+function parse() {
+    const peripherals = document.getElementById('peripherals');
+    const editor = peripherals.children[0];
+    console.log(parseEditor(editor));
 }
 window.onload = () => {
     clearPeripherals();
-    const peripherals = {
-        motors: [
-            { name: 'LeftWheel', gpio_pos: 4, gpio_neg: 5 },
-            { name: 'RightWheel', gpio_pos: 6, gpio_neg: 7 },
-        ],
-        hcsr04s: [
-            { name: 'Forward', gpio_trigger: 14, gpio_echo: 15 },
-        ],
-    };
 };
 </script>
 </head>
 <body>
 <div id='peripherals'></div>
+<button onclick='parse()'>parse!</button>
 </body>
 </html>
